@@ -1,0 +1,34 @@
+# Production reverse proxy for the Real Estate CRM.
+# Caddy automatically obtains and renews a Let's Encrypt certificate for {$DOMAIN}.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API and uploaded files are served by the Express container.
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+	handle /uploads/* {
+		reverse_proxy api:4000
+	}
+
+	# Everything else is the React single-page app.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Long-cache the hashed build assets.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=2592000, immutable"
+
+	# Security headers.
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	tls {$TLS_EMAIL}
+}
