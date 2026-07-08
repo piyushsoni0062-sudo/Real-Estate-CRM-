@@ -59,7 +59,7 @@ async function captureInboundLead(
     return { leadId: dup.id, duplicate: true };
   }
 
-  const [status, source] = await Promise.all([
+  const [status, source, stage] = await Promise.all([
     prisma.leadStatusOption.findFirst({ orderBy: { order: "asc" } }),
     prisma.leadSourceOption
       .findFirst({ where: { name: { equals: input.sourceName, mode: "insensitive" } } })
@@ -69,6 +69,9 @@ async function captureInboundLead(
           (await prisma.leadSourceOption.findFirst({ where: { name: "Website" } })) ??
           prisma.leadSourceOption.findFirstOrThrow()
       ),
+    // Inbound leads land in the first Kanban stage automatically, otherwise
+    // they'd have no stageId and never show up on the Sales Pipeline board.
+    prisma.pipelineStage.findFirst({ orderBy: { order: "asc" } }),
   ]);
   if (!status) throw ApiError.badRequest("CRM is not seeded yet");
 
@@ -81,6 +84,7 @@ async function captureInboundLead(
       requirement: input.requirement?.trim() || null,
       statusId: status.id,
       sourceId: source.id,
+      stageId: stage?.id,
     },
   });
   await prisma.leadActivity.create({

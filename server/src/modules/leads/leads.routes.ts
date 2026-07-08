@@ -105,14 +105,17 @@ async function addActivity(
 }
 
 async function defaults() {
-  const [status, source] = await Promise.all([
+  const [status, source, stage] = await Promise.all([
     prisma.leadStatusOption.findFirst({ orderBy: { order: "asc" } }),
     prisma.leadSourceOption.findFirst({ where: { name: "Manual" } }).then(
       (s) => s ?? prisma.leadSourceOption.findFirstOrThrow()
     ),
+    // New leads land in the first Kanban stage automatically, otherwise
+    // they'd have no stageId and never show up on the Sales Pipeline board.
+    prisma.pipelineStage.findFirst({ orderBy: { order: "asc" } }),
   ]);
   if (!status) throw ApiError.badRequest("No lead statuses configured — seed the database first");
-  return { statusId: status.id, sourceId: source.id };
+  return { statusId: status.id, sourceId: source.id, stageId: stage?.id };
 }
 
 // ---- GET /api/leads ----
@@ -209,6 +212,7 @@ router.post(
         customFields: jsonInput(body.customFields),
         statusId: body.statusId ?? d.statusId,
         sourceId: body.sourceId ?? d.sourceId,
+        stageId: body.stageId ?? d.stageId,
         createdById: req.user!.id,
       },
       include,
@@ -277,6 +281,7 @@ router.post(
           requirement: r.requirement?.trim() || null,
           statusId: d.statusId,
           sourceId: sourceByName.get((r.source ?? "").toLowerCase()) ?? d.sourceId,
+          stageId: d.stageId,
           createdById: req.user!.id,
         },
       });
