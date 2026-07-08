@@ -1,6 +1,8 @@
 # ---- Build stage ----
 FROM node:22-alpine AS build
 WORKDIR /app
+# Prisma's engines need OpenSSL — Alpine doesn't ship it by default.
+RUN apk add --no-cache openssl
 COPY package*.json ./
 RUN npm ci
 COPY prisma ./prisma
@@ -13,6 +15,7 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache openssl
 # Reuse the build stage's installed deps (includes the generated Prisma client,
 # the prisma CLI for migrations, and tsx for the seed) — no slow re-download.
 COPY package*.json ./
