@@ -1,7 +1,7 @@
 node_modules/
 dist/
 .env
-uploads/
+/server/uploads/
 .pgdata/
 *.log
 .DS_Store
