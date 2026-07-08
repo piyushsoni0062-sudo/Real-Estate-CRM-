@@ -21,7 +21,7 @@ interface KanbanLead {
   id: string;
   name: string;
   mobile: string;
-  budgetMax: string | null;
+  budget: string | null;
   updatedAt: string;
   assignedTo: { id: string; name: string; avatarUrl: string | null } | null;
   source: { name: string; color: string };
@@ -187,9 +187,9 @@ export default function PipelinePage() {
                         >
                           {lead.source.name}
                         </span>
-                        {lead.budgetMax && (
+                        {lead.budget && (
                           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                            {formatINR(lead.budgetMax)}
+                            {formatINR(lead.budget)}
                           </span>
                         )}
                       </div>

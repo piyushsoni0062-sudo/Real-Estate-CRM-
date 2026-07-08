@@ -38,8 +38,8 @@ export interface Lead {
   altMobile: string | null;
   city: string | null;
   address: string | null;
-  budgetMin: string | null;
-  budgetMax: string | null;
+  budget: string | null;
+  propertySize: string | null;
   requirement: string | null;
   propertyType: string | null;
   score: number;

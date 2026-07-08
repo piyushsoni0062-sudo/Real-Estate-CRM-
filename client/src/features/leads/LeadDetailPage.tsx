@@ -267,12 +267,16 @@ export default function LeadDetailPage() {
             </div>
           </div>
 
-          <dl className="mt-5 grid grid-cols-2 gap-4 border-t pt-4 text-sm sm:grid-cols-4">
+          <dl className="mt-5 grid grid-cols-2 gap-4 border-t pt-4 text-sm sm:grid-cols-5">
             <div>
               <dt className="text-xs font-semibold uppercase text-muted-foreground">Budget</dt>
               <dd className="mt-0.5 font-medium">
-                {lead.budgetMax ? `${formatINR(lead.budgetMin)} – ${formatINR(lead.budgetMax)}` : "—"}
+                {lead.budget ? formatINR(lead.budget) : "—"}
               </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase text-muted-foreground">Property Size</dt>
+              <dd className="mt-0.5 font-medium">{lead.propertySize ?? "—"}</dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase text-muted-foreground">Project</dt>

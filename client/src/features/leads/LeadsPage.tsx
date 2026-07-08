@@ -186,10 +186,15 @@ export default function LeadsPage() {
       header: "Budget",
       className: "hidden lg:table-cell",
       render: (l) =>
-        l.budgetMax ? (
-          <span className="text-sm">{formatINR(l.budgetMin)} – {formatINR(l.budgetMax)}</span>
+        l.budget ? (
+          <span className="text-sm">
+            {formatINR(l.budget)}
+            {l.propertySize && (
+              <span className="block text-xs text-muted-foreground">{l.propertySize}</span>
+            )}
+          </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">{l.propertySize ?? "—"}</span>
         ),
     },
     {

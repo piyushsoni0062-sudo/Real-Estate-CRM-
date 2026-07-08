@@ -167,8 +167,8 @@ model Lead {
   altMobile    String?
   city         String?
   address      String?
-  budgetMin    Decimal?          @db.Decimal(14, 2)
-  budgetMax    Decimal?          @db.Decimal(14, 2)
+  budget       Decimal?          @db.Decimal(14, 2)
+  propertySize String?
   requirement  String?
   propertyType PropertyType?
   statusId     String

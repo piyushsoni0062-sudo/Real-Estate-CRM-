@@ -28,6 +28,8 @@
     --input: 220 13% 88%;
     --ring: 221 83% 53%;
     --radius: 0.75rem;
+    /* Native controls (date picker icon, select arrows) render for light UI */
+    color-scheme: light;
   }
 
   .dark {
@@ -54,6 +56,8 @@
     --border: 222 25% 18%;
     --input: 222 25% 22%;
     --ring: 217 91% 60%;
+    /* Native controls (date picker icon, select arrows) render for dark UI */
+    color-scheme: dark;
   }
 
   * {

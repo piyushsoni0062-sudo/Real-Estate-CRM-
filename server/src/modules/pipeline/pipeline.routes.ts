@@ -22,7 +22,7 @@ router.get(
           orderBy: { updatedAt: "desc" },
           take: 100,
           select: {
-            id: true, name: true, mobile: true, budgetMax: true, updatedAt: true,
+            id: true, name: true, mobile: true, budget: true, updatedAt: true,
             assignedTo: { select: { id: true, name: true, avatarUrl: true } },
             source: { select: { name: true, color: true } },
             project: { select: { name: true } },

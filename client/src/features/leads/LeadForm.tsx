@@ -16,8 +16,8 @@ export const leadSchema = z.object({
   mobile: z.string().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number"),
   email: z.string().email("Invalid email").or(z.literal("")).optional(),
   city: z.string().optional(),
-  budgetMin: z.string().optional(),
-  budgetMax: z.string().optional(),
+  budget: z.string().optional(),
+  propertySize: z.string().optional(),
   requirement: z.string().optional(),
   propertyType: z.string().optional(),
   statusId: z.string().optional(),
@@ -35,8 +35,8 @@ export function toPayload(values: LeadFormValues) {
     mobile: values.mobile,
     email: values.email?.trim() || null,
     city: values.city?.trim() || null,
-    budgetMin: values.budgetMin ? Number(values.budgetMin) : null,
-    budgetMax: values.budgetMax ? Number(values.budgetMax) : null,
+    budget: values.budget ? Number(values.budget) : null,
+    propertySize: values.propertySize?.trim() || null,
     requirement: values.requirement?.trim() || null,
     propertyType: values.propertyType || null,
     statusId: values.statusId || undefined,
@@ -78,8 +78,8 @@ export function LeadForm({
       mobile: initial?.mobile ?? "",
       email: initial?.email ?? "",
       city: initial?.city ?? "",
-      budgetMin: initial?.budgetMin ? String(Number(initial.budgetMin)) : "",
-      budgetMax: initial?.budgetMax ? String(Number(initial.budgetMax)) : "",
+      budget: initial?.budget ? String(Number(initial.budget)) : "",
+      propertySize: initial?.propertySize ?? "",
       requirement: initial?.requirement ?? "",
       propertyType: initial?.propertyType ?? "",
       statusId: initial?.statusId ?? "",
@@ -157,12 +157,12 @@ export function LeadForm({
           <Input id="lead-city" placeholder="Mathura" {...register("city")} />
         </div>
         <div>
-          <Label htmlFor="lead-budget-min">Budget Min (₹)</Label>
-          <Input id="lead-budget-min" type="number" min={0} placeholder="1500000" {...register("budgetMin")} />
+          <Label htmlFor="lead-budget">Budget (₹)</Label>
+          <Input id="lead-budget" type="number" min={0} placeholder="2500000" {...register("budget")} />
         </div>
         <div>
-          <Label htmlFor="lead-budget-max">Budget Max (₹)</Label>
-          <Input id="lead-budget-max" type="number" min={0} placeholder="5000000" {...register("budgetMax")} />
+          <Label htmlFor="lead-size">Property Size</Label>
+          <Input id="lead-size" placeholder="100 gaj / 2000 sq.ft." {...register("propertySize")} />
         </div>
         <div>
           <Label htmlFor="lead-ptype">Property Type</Label>

@@ -415,8 +415,8 @@ async function main() {
         mobile,
         email: `${name.toLowerCase().replace(/\s+/g, ".")}${randInt(1, 99)}@example.com`,
         city: rand(CITIES),
-        budgetMin: randInt(10, 30) * 100000,
-        budgetMax: randInt(31, 100) * 100000,
+        budget: randInt(15, 100) * 100000,
+        propertySize: rand(["100 gaj", "150 gaj", "200 gaj", "1000 sq.ft.", "2000 sq.ft.", "1 bigha"]),
         requirement: rand([
           "Looking for a residential plot near Prem Mandir",
           "Wants 3BHK apartment with temple view",
