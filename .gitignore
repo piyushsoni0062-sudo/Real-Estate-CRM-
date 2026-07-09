@@ -4,4 +4,5 @@ dist/
 /server/uploads/
 .pgdata/
 *.log
+*.tsbuildinfo
 .DS_Store
