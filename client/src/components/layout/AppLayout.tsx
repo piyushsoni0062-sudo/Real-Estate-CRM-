@@ -131,7 +131,6 @@ export default function AppLayout() {
           </span>
           <div>
             <p className="text-sm font-bold leading-tight">Real Estate CRM</p>
-            <p className="text-xs text-muted-foreground">Vrindavan Spaces</p>
           </div>
           <button
             className="ml-auto cursor-pointer rounded-lg p-1.5 text-muted-foreground hover:bg-muted lg:hidden"
