@@ -1,6 +1,9 @@
 # ---- Build the React SPA ----
 FROM node:22-alpine AS build
 WORKDIR /app
+# White-label app name baked into the build (sidebar, login, title, PWA).
+ARG VITE_APP_NAME="Real Estate CRM"
+ENV VITE_APP_NAME=$VITE_APP_NAME
 COPY package*.json ./
 RUN npm ci
 COPY . .

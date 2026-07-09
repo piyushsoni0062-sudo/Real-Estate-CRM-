@@ -5,7 +5,11 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./lib/auth";
 import { ToastProvider } from "./components/ui/toast";
+import { APP_NAME } from "./lib/branding";
 import "./index.css";
+
+// White-label browser tab title.
+document.title = APP_NAME;
 
 const queryClient = new QueryClient({
   defaultOptions: {

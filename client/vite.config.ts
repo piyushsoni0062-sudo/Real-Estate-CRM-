@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 
+const APP_NAME = (process.env.VITE_APP_NAME || "").trim() || "Real Estate CRM";
+
 export default defineConfig({
   plugins: [
     react(),
@@ -10,8 +12,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "apple-touch-icon.png"],
       manifest: {
-        name: "Vrindavan Spaces CRM",
-        short_name: "V Spaces CRM",
+        name: APP_NAME,
+        short_name: APP_NAME.length <= 12 ? APP_NAME : APP_NAME.slice(0, 12),
         description: "Real Estate CRM — leads, properties, pipeline, site visits, reports",
         theme_color: "#2563eb",
         background_color: "#0b1020",

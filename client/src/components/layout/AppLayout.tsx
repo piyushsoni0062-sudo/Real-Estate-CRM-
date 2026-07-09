@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { api, ApiResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { APP_NAME } from "@/lib/branding";
 import { cn, timeAgo } from "@/lib/utils";
 import { Avatar, Badge, Dropdown, DropdownItem } from "@/components/ui/primitives";
 import type { Notification, FollowUp } from "@/lib/types";
@@ -130,7 +131,7 @@ export default function AppLayout() {
             <Building2 className="h-5 w-5" />
           </span>
           <div>
-            <p className="text-sm font-bold leading-tight">Real Estate CRM</p>
+            <p className="text-sm font-bold leading-tight">{APP_NAME}</p>
           </div>
           <button
             className="ml-auto cursor-pointer rounded-lg p-1.5 text-muted-foreground hover:bg-muted lg:hidden"

@@ -96,6 +96,7 @@ real-estate-crm/
 |---|---|
 | Installation | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
 | **Go live on Hostinger (domain + HTTPS)** | [docs/HOSTINGER.md](docs/HOSTINGER.md) |
+| **Sell to a new client (white-label)** | [docs/NEW-CLIENT.md](docs/NEW-CLIENT.md) |
 | Deployment (Docker/NGINX/CI) | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | REST API reference | [docs/API.md](docs/API.md) |
 | Testing guide | [docs/TESTING.md](docs/TESTING.md) |

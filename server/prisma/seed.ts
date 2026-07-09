@@ -289,11 +289,12 @@ async function main() {
     create: {
       key: "company",
       value: {
-        name: "Vrindavan Spaces Pvt. Ltd.",
-        address: "Chhatikara Road, Vrindavan, Mathura, UP 281121",
-        phone: "+91 90000 00001",
-        email: "hello@vrindavanspaces.in",
-        gst: "09AAACB1234C1Z5",
+        // Per-client company name from env (white-label); editable later in Settings.
+        name: process.env.APP_NAME?.trim() || "Real Estate CRM",
+        address: "",
+        phone: "",
+        email: "",
+        gst: "",
       },
     },
     update: {},
