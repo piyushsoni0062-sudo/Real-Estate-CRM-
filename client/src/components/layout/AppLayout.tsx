@@ -100,6 +100,14 @@ export default function AppLayout() {
     refetchInterval: 30000, // near-real-time reminder polling
   });
 
+  // Company name shown under the app name in the sidebar (set in Settings → Company).
+  const { data: branding } = useQuery({
+    queryKey: ["branding"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<{ companyName: string }>>("/settings/branding")).data.data,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const nav = useMemo(() => NAV.filter((n) => !n.perm || can(n.perm[0], n.perm[1])), [can]);
   const unread = notif?.unreadCount ?? 0;
   const dueCount = notif?.dueFollowUps?.length ?? 0;
@@ -130,8 +138,11 @@ export default function AppLayout() {
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <Building2 className="h-5 w-5" />
           </span>
-          <div>
-            <p className="text-sm font-bold leading-tight">{APP_NAME}</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold leading-tight">{APP_NAME}</p>
+            {branding?.companyName && (
+              <p className="truncate text-xs text-muted-foreground">{branding.companyName}</p>
+            )}
           </div>
           <button
             className="ml-auto cursor-pointer rounded-lg p-1.5 text-muted-foreground hover:bg-muted lg:hidden"

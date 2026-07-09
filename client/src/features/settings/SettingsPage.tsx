@@ -85,6 +85,7 @@ function CompanyTab() {
     mutationFn: async () => (await api.put("/settings/company", { value: form })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["branding"] }); // refresh the sidebar name
       toast.success("Company details saved");
     },
     onError: (err) => toast.error("Save failed", errorMessage(err)),

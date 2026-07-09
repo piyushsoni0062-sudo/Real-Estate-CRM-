@@ -11,6 +11,16 @@ import { sendWhatsAppText } from "../../lib/whatsapp";
 const router = Router();
 router.use(requireAuth);
 
+// ---- Company name for the sidebar — available to every logged-in user ----
+router.get(
+  "/branding",
+  asyncHandler(async (_req, res) => {
+    const setting = await prisma.setting.findUnique({ where: { key: "company" } });
+    const value = (setting?.value as { name?: string } | null) ?? null;
+    res.json({ success: true, data: { companyName: value?.name?.trim() ?? "" } });
+  })
+);
+
 // ---- Company / theme key-value settings ----
 router.get(
   "/",
