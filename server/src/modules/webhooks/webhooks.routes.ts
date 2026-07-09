@@ -32,6 +32,26 @@ interface InboundLead {
   sourceName: string;
 }
 
+const SOURCE_COLORS = ["#2563EB", "#7C3AED", "#DB2777", "#059669", "#D97706", "#0891B2", "#DC2626"];
+
+/**
+ * Finds a lead source by name (case-insensitive), creating it on the fly if it
+ * doesn't exist. This lets any portal or custom source (Housing, 99acres,
+ * a landing page, etc.) start flowing leads in without pre-configuration —
+ * the new source then appears in filters and reports automatically.
+ */
+async function ensureLeadSource(name: string) {
+  const clean = name.trim().slice(0, 60) || "Website";
+  const existing = await prisma.leadSourceOption.findFirst({
+    where: { name: { equals: clean, mode: "insensitive" } },
+  });
+  if (existing) return existing;
+  const count = await prisma.leadSourceOption.count();
+  return prisma.leadSourceOption.create({
+    data: { name: clean, color: SOURCE_COLORS[count % SOURCE_COLORS.length] },
+  });
+}
+
 /**
  * Shared inbound-lead pipeline used by every integration:
  * validates the mobile, dedupes, creates the lead + timeline entry,
@@ -61,14 +81,7 @@ async function captureInboundLead(
 
   const [status, source, stage] = await Promise.all([
     prisma.leadStatusOption.findFirst({ orderBy: { order: "asc" } }),
-    prisma.leadSourceOption
-      .findFirst({ where: { name: { equals: input.sourceName, mode: "insensitive" } } })
-      .then(
-        async (s) =>
-          s ??
-          (await prisma.leadSourceOption.findFirst({ where: { name: "Website" } })) ??
-          prisma.leadSourceOption.findFirstOrThrow()
-      ),
+    ensureLeadSource(input.sourceName),
     // Inbound leads land in the first Kanban stage automatically, otherwise
     // they'd have no stageId and never show up on the Sales Pipeline board.
     prisma.pipelineStage.findFirst({ orderBy: { order: "asc" } }),
@@ -148,13 +161,16 @@ router.post(
     if (!enabled || !config?.token || req.query.token !== config.token) {
       throw ApiError.unauthorized("Invalid webhook token");
     }
+    // Source can come from ?source= in the URL (easiest — the same portal URL
+    // just carries its own source tag) or from the JSON body.
+    const querySource = typeof req.query.source === "string" ? req.query.source : undefined;
     const result = await captureInboundLead({
       name: req.body.name,
       mobile: req.body.mobile,
       email: req.body.email,
       city: req.body.city,
       requirement: req.body.requirement,
-      sourceName: req.body.source || "Website",
+      sourceName: querySource || req.body.source || "Website",
     });
     res.status(result.duplicate ? 200 : 201).json({ success: true, data: result });
   })
