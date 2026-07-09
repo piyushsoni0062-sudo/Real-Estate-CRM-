@@ -121,7 +121,7 @@ export default function AppLayout() {
       )}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r bg-card transition-transform duration-200 lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r bg-card pt-[env(safe-area-inset-top)] transition-transform duration-200 lg:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
         aria-label="Main navigation"
@@ -186,7 +186,7 @@ export default function AppLayout() {
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
         {/* Topbar */}
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
+        <header className="sticky top-0 z-20 flex h-[calc(4rem+env(safe-area-inset-top))] items-center gap-3 border-b bg-background/80 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md sm:px-6">
           <button
             className="cursor-pointer rounded-lg p-2 text-muted-foreground hover:bg-muted lg:hidden"
             onClick={() => setSidebarOpen(true)}
