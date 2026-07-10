@@ -108,6 +108,11 @@ export default function AppLayout() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Keep the browser tab / window title in sync with the company name.
+  useEffect(() => {
+    document.title = branding?.companyName ? `${branding.companyName} — ${APP_NAME}` : APP_NAME;
+  }, [branding?.companyName]);
+
   const nav = useMemo(() => NAV.filter((n) => !n.perm || can(n.perm[0], n.perm[1])), [can]);
   const unread = notif?.unreadCount ?? 0;
   const dueCount = notif?.dueFollowUps?.length ?? 0;
