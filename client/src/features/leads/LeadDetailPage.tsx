@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  BadgeIndianRupee,
   CalendarPlus,
   FileText,
   Mail,
@@ -60,6 +61,7 @@ export default function LeadDetailPage() {
   const [interactionText, setInteractionText] = useState("");
   const [followUpOpen, setFollowUpOpen] = useState(false);
   const [fu, setFu] = useState({ dueAt: "", repeat: "NONE", notes: "", assignedToId: "" });
+  const [bookingOpen, setBookingOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const invalidate = () => {
@@ -258,6 +260,11 @@ export default function LeadDetailPage() {
                     <Pencil className="h-4 w-4" /> Edit
                   </Button>
                 </>
+              )}
+              {can("bookings", "create") && (
+                <Button variant="success" size="sm" onClick={() => setBookingOpen(true)}>
+                  <BadgeIndianRupee className="h-4 w-4" /> Book Unit
+                </Button>
               )}
               {can("leads", "delete") && (
                 <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
@@ -462,8 +469,18 @@ export default function LeadDetailPage() {
           {tab === "bookings" && (
             <Card>
               <CardContent className="pt-5">
+                {can("bookings", "create") && (
+                  <div className="mb-4">
+                    <Button size="sm" variant="success" onClick={() => setBookingOpen(true)}>
+                      <BadgeIndianRupee className="h-4 w-4" /> Book Unit
+                    </Button>
+                  </div>
+                )}
                 {lead.bookings.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">No bookings for this lead.</p>
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No bookings yet — click “Book Unit” to book a property for this lead.
+                    The lead will automatically move to the Booking stage and become a customer.
+                  </p>
                 ) : (
                   <div className="space-y-2">
                     {lead.bookings.map((b) => (
@@ -654,6 +671,180 @@ export default function LeadDetailPage() {
           </div>
         </div>
       </Dialog>
+
+      <BookUnitDialog
+        open={bookingOpen}
+        onClose={() => setBookingOpen(false)}
+        leadId={lead.id}
+        leadName={lead.name}
+        onBooked={() => {
+          invalidate();
+          queryClient.invalidateQueries({ queryKey: ["pipeline"] });
+          queryClient.invalidateQueries({ queryKey: ["customers"] });
+          queryClient.invalidateQueries({ queryKey: ["properties"] });
+        }}
+      />
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Book Unit — converts the lead into a booking + customer in one step */
+/* ------------------------------------------------------------------ */
+
+interface AvailableProperty {
+  id: string;
+  title: string;
+  code: string;
+  price: string;
+  project: { id: string; name: string } | null;
+}
+
+function BookUnitDialog({
+  open,
+  onClose,
+  leadId,
+  leadName,
+  onBooked,
+}: {
+  open: boolean;
+  onClose: () => void;
+  leadId: string;
+  leadName: string;
+  onBooked: () => void;
+}) {
+  const toast = useToast();
+  const [propertyId, setPropertyId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [tokenAmount, setTokenAmount] = useState("");
+  const [paymentPlan, setPaymentPlan] = useState("");
+  const [notes, setNotes] = useState("");
+
+  // Only available units can be booked.
+  const { data: properties, isLoading } = useQuery({
+    queryKey: ["available-properties"],
+    queryFn: async () =>
+      (
+        await api.get<ApiResponse<{ items: AvailableProperty[] }>>("/properties", {
+          params: { status: "AVAILABLE", limit: 100, sortBy: "title", sortOrder: "asc" },
+        })
+      ).data.data.items,
+    enabled: open,
+  });
+
+  const selected = properties?.find((p) => p.id === propertyId);
+
+  const book = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post("/bookings", {
+          leadId,
+          propertyId,
+          amount: Number(amount),
+          tokenAmount: tokenAmount ? Number(tokenAmount) : null,
+          paymentPlan: paymentPlan.trim() || null,
+          notes: notes.trim() || null,
+        })
+      ).data,
+    onSuccess: () => {
+      onBooked();
+      onClose();
+      setPropertyId("");
+      setAmount("");
+      setTokenAmount("");
+      setPaymentPlan("");
+      setNotes("");
+      toast.success(
+        "Booking created 🎉",
+        `${leadName} moved to Booking stage and added to Customers.`
+      );
+    },
+    onError: (err) => toast.error("Booking failed", errorMessage(err)),
+  });
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Book a Unit"
+      description={`Book a property for ${leadName} — the unit is marked Booked, the lead moves to the Booking stage, and a customer record is created automatically.`}
+    >
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="bk-property">Property (available units) *</Label>
+          <Select
+            id="bk-property"
+            value={propertyId}
+            onChange={(e) => {
+              setPropertyId(e.target.value);
+              const p = properties?.find((x) => x.id === e.target.value);
+              if (p) setAmount(String(Number(p.price)));
+            }}
+          >
+            <option value="">{isLoading ? "Loading units…" : "Choose a unit…"}</option>
+            {properties?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title} · {p.code}
+                {p.project ? ` · ${p.project.name}` : ""} · {formatINR(p.price)}
+              </option>
+            ))}
+          </Select>
+          {!isLoading && properties?.length === 0 && (
+            <p className="mt-1 text-xs text-warning">
+              No available units — add a property first (Property Management).
+            </p>
+          )}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="bk-amount">Deal Amount (₹) *</Label>
+            <Input
+              id="bk-amount"
+              type="number"
+              min={1}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={selected ? String(Number(selected.price)) : "2500000"}
+            />
+          </div>
+          <div>
+            <Label htmlFor="bk-token">Token Received (₹)</Label>
+            <Input
+              id="bk-token"
+              type="number"
+              min={0}
+              value={tokenAmount}
+              onChange={(e) => setTokenAmount(e.target.value)}
+              placeholder="100000"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">Recorded as the first payment.</p>
+          </div>
+        </div>
+        <div>
+          <Label htmlFor="bk-plan">Payment Plan</Label>
+          <Input
+            id="bk-plan"
+            value={paymentPlan}
+            onChange={(e) => setPaymentPlan(e.target.value)}
+            placeholder="e.g. 30% now, rest in 6 monthly installments"
+          />
+        </div>
+        <div>
+          <Label htmlFor="bk-notes">Notes</Label>
+          <Textarea id="bk-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="success"
+            disabled={!propertyId || !amount || Number(amount) <= 0}
+            loading={book.isPending}
+            onClick={() => book.mutate()}
+          >
+            <BadgeIndianRupee className="h-4 w-4" /> Confirm Booking
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }

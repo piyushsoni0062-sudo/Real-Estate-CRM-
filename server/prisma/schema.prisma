@@ -294,6 +294,10 @@ model Customer {
   email     String?
   address   String?
   city      String?
+  // Referral tracking — which existing customer brought this one in.
+  referredById String?
+  referredBy   Customer?  @relation("CustomerReferral", fields: [referredById], references: [id])
+  referrals    Customer[] @relation("CustomerReferral")
   deletedAt DateTime?
   createdById String?
   updatedById String?
@@ -305,6 +309,7 @@ model Customer {
 
   @@index([mobile])
   @@index([deletedAt])
+  @@index([referredById])
 }
 
 // ============================================================
@@ -464,8 +469,27 @@ model Booking {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
+  payments Payment[]
+
   @@index([status])
   @@index([bookingDate])
+}
+
+// Payment received against a booking (token, installments, final payment).
+model Payment {
+  id          String   @id @default(cuid())
+  bookingId   String
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  amount      Decimal  @db.Decimal(14, 2)
+  method      String   @default("CASH") // CASH | UPI | BANK_TRANSFER | CHEQUE | OTHER
+  reference   String?
+  notes       String?
+  paidAt      DateTime @default(now())
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([bookingId])
+  @@index([paidAt])
 }
 
 // ============================================================

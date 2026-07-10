@@ -154,7 +154,18 @@ export interface Customer {
   lead: { id: string; name: string; status?: { name: string } } | null;
   bookings: Booking[];
   files?: FileUpload[];
+  referredBy?: { id: string; name: string } | null;
+  referrals?: Array<{ id: string; name: string; mobile: string }>;
   createdAt: string;
+}
+
+export interface Payment {
+  id: string;
+  amount: string;
+  method: string;
+  reference: string | null;
+  notes: string | null;
+  paidAt: string;
 }
 
 export interface SiteVisit {
@@ -184,6 +195,7 @@ export interface Booking {
   customer: { id: string; name: string } | null;
   property: { id: string; title: string; code: string; price?: string };
   createdBy: UserLite | null;
+  payments?: Payment[];
   createdAt: string;
 }
 

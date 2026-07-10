@@ -18,14 +18,20 @@ const customerBody = z.object({
   address: z.string().max(300).optional().nullable(),
   city: z.string().max(80).optional().nullable(),
   leadId: z.string().optional().nullable(),
+  referredById: z.string().optional().nullable(),
 });
 
 const include = {
   lead: { select: { id: true, name: true, status: { select: { name: true } } } },
   bookings: {
-    include: { property: { select: { id: true, title: true, code: true } } },
+    include: {
+      property: { select: { id: true, title: true, code: true } },
+      payments: { orderBy: { paidAt: "asc" as const } },
+    },
     orderBy: { createdAt: "desc" as const },
   },
+  referredBy: { select: { id: true, name: true } },
+  referrals: { where: { deletedAt: null }, select: { id: true, name: true, mobile: true } },
 } satisfies Prisma.CustomerInclude;
 
 // ---- GET /api/customers ----
@@ -99,6 +105,9 @@ router.patch(
   asyncHandler(async (req, res) => {
     const before = await prisma.customer.findFirst({ where: { id: req.params.id, deletedAt: null } });
     if (!before) throw ApiError.notFound("Customer not found");
+    if (req.body.referredById && req.body.referredById === before.id) {
+      throw ApiError.badRequest("A customer cannot refer themselves");
+    }
     const customer = await prisma.customer.update({
       where: { id: before.id },
       data: { ...req.body, updatedById: req.user!.id },

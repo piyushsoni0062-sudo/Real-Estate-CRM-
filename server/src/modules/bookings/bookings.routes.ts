@@ -27,7 +27,36 @@ const include = {
   customer: { select: { id: true, name: true } },
   property: { select: { id: true, title: true, code: true, price: true } },
   createdBy: { select: { id: true, name: true } },
+  payments: { orderBy: { paidAt: "asc" as const } },
 } satisfies Prisma.BookingInclude;
+
+/** Moves the lead into the right status/stage for its booking lifecycle. */
+async function syncLeadForBooking(
+  tx: Prisma.TransactionClient,
+  leadId: string,
+  phase: "BOOKED" | "COMPLETED"
+) {
+  const [status, stage] = await Promise.all([
+    tx.leadStatusOption.findFirst({ where: { name: { equals: "Booked", mode: "insensitive" } } }),
+    phase === "BOOKED"
+      ? tx.pipelineStage
+          .findFirst({ where: { name: { equals: "Booking", mode: "insensitive" } } })
+          .then(async (s) => s ?? tx.pipelineStage.findFirst({ where: { isWon: true } }))
+      : tx.pipelineStage
+          .findFirst({ where: { isWon: true } })
+          .then(
+            async (s) =>
+              s ?? tx.pipelineStage.findFirst({ orderBy: { order: "desc" } })
+          ),
+  ]);
+  await tx.lead.update({
+    where: { id: leadId },
+    data: {
+      ...(status && { statusId: status.id }),
+      ...(stage && { stageId: stage.id }),
+    },
+  });
+}
 
 // ---- GET /api/bookings ----
 router.get(
@@ -106,10 +135,25 @@ router.post(
         });
       }
       await tx.property.update({ where: { id: property.id }, data: { status: "BOOKED" } });
-      return tx.booking.create({
+      // Move the lead to "Booked" status + "Booking" pipeline stage automatically.
+      await syncLeadForBooking(tx, lead.id, "BOOKED");
+      const created = await tx.booking.create({
         data: { ...body, customerId: customer.id, createdById: req.user!.id },
         include,
       });
+      // Record the token amount as the first payment, if given.
+      if (body.tokenAmount && body.tokenAmount > 0) {
+        await tx.payment.create({
+          data: {
+            bookingId: created.id,
+            amount: body.tokenAmount,
+            method: "TOKEN",
+            notes: "Token amount at booking",
+            createdById: req.user!.id,
+          },
+        });
+      }
+      return created;
     });
 
     await prisma.leadActivity.create({
@@ -140,7 +184,7 @@ router.patch(
         data: req.body,
         include,
       });
-      // Keep unit availability in sync with the booking lifecycle.
+      // Keep unit availability and the lead's pipeline stage in sync.
       if (req.body.status && req.body.status !== before.status) {
         if (req.body.status === "CANCELLED") {
           await tx.property.update({
@@ -149,12 +193,65 @@ router.patch(
           });
         } else if (req.body.status === "COMPLETED") {
           await tx.property.update({ where: { id: before.propertyId }, data: { status: "SOLD" } });
+          await syncLeadForBooking(tx, before.leadId, "COMPLETED");
         }
       }
       return updated;
     });
     logAudit(req, "UPDATE", "Booking", booking.id, { status: before.status }, req.body);
     res.json({ success: true, data: booking });
+  })
+);
+
+// ---- POST /api/bookings/:id/payments — record a payment received ----
+router.post(
+  "/:id/payments",
+  requirePermission("bookings", "update"),
+  validate({
+    body: z.object({
+      amount: z.coerce.number().positive("Amount must be greater than 0"),
+      method: z.enum(["CASH", "UPI", "BANK_TRANSFER", "CHEQUE", "TOKEN", "OTHER"]).default("CASH"),
+      reference: z.string().max(100).optional().nullable(),
+      notes: z.string().max(500).optional().nullable(),
+      paidAt: z.coerce.date().optional(),
+    }),
+  }),
+  asyncHandler(async (req, res) => {
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      include: { payments: true },
+    });
+    if (!booking) throw ApiError.notFound("Booking not found");
+
+    const payment = await prisma.payment.create({
+      data: { ...req.body, bookingId: booking.id, createdById: req.user!.id },
+    });
+    await prisma.leadActivity.create({
+      data: {
+        leadId: booking.leadId,
+        userId: req.user!.id,
+        type: "BOOKING",
+        title: `Payment received: ₹${req.body.amount.toLocaleString("en-IN")} (${req.body.method})`,
+        description: req.body.reference ?? undefined,
+      },
+    });
+    logAudit(req, "CREATE", "Payment", payment.id, undefined, req.body);
+    res.status(201).json({ success: true, data: payment });
+  })
+);
+
+// ---- DELETE /api/bookings/:id/payments/:paymentId — admin correction ----
+router.delete(
+  "/:id/payments/:paymentId",
+  requirePermission("bookings", "manage"),
+  asyncHandler(async (req, res) => {
+    const payment = await prisma.payment.findFirst({
+      where: { id: req.params.paymentId, bookingId: req.params.id },
+    });
+    if (!payment) throw ApiError.notFound("Payment not found");
+    await prisma.payment.delete({ where: { id: payment.id } });
+    logAudit(req, "DELETE", "Payment", payment.id, payment);
+    res.json({ success: true, message: "Payment removed" });
   })
 );
 
