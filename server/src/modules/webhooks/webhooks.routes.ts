@@ -177,6 +177,58 @@ router.post(
 );
 
 // ============================================================
+// IVR / cloud-telephony call webhook
+//   GET/POST /api/webhooks/call?token=...
+// Works with Exotel, MyOperator, Tata Smartflo, Knowlarity, Servetel etc. —
+// each provider names the caller-number field differently, so we accept all
+// the common variants from either the query string or the JSON body.
+// Every incoming call becomes a lead (deduped by number, repeat calls are
+// logged on the existing lead's timeline).
+// ============================================================
+router.all(
+  "/call",
+  webhookLimiter,
+  asyncHandler(async (req, res) => {
+    const { enabled, config } = await integrationConfig<{ token?: string }>("webhook");
+    if (!enabled || !config?.token || req.query.token !== config.token) {
+      throw ApiError.unauthorized("Invalid webhook token");
+    }
+
+    const fields: Record<string, unknown> = {
+      ...(req.query as Record<string, unknown>),
+      ...((req.body as Record<string, unknown> | undefined) ?? {}),
+    };
+    const CALLER_KEYS = [
+      "CallFrom", "callfrom", "call_from", "caller_id", "caller_id_number", "callerid",
+      "caller_number", "caller", "from", "From", "from_number", "mobile", "phone",
+      "customer_number", "cli",
+    ];
+    const raw = CALLER_KEYS.map((k) => fields[k]).find(
+      (v): v is string => typeof v === "string" && v.trim().length >= 10
+    );
+    if (!raw) {
+      throw ApiError.badRequest(
+        "Caller number missing — send it as CallFrom / caller_id / from / mobile"
+      );
+    }
+
+    const digits = raw.replace(/\D/g, "").slice(-10);
+    const name =
+      (typeof fields.name === "string" && fields.name.trim()) || `Call Enquiry …${digits.slice(-4)}`;
+    const source = typeof req.query.source === "string" && req.query.source ? req.query.source : "Phone Call";
+
+    const result = await captureInboundLead({
+      name,
+      mobile: raw,
+      requirement:
+        typeof fields.requirement === "string" ? fields.requirement : "Incoming call enquiry",
+      sourceName: source,
+    });
+    res.status(result.duplicate ? 200 : 201).json({ success: true, data: result });
+  })
+);
+
+// ============================================================
 // Facebook Lead Ads
 //   GET  /api/webhooks/facebook  — Meta webhook verification handshake
 //   POST /api/webhooks/facebook  — leadgen events → fetch lead via Graph API

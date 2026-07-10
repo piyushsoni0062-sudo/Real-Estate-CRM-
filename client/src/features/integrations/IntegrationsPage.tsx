@@ -75,6 +75,8 @@ interface PortalSource {
   label: string;
   description: string;
   steps: string[];
+  /** Webhook path override (defaults to the generic lead webhook). */
+  path?: string;
 }
 
 const PORTAL_SOURCES: PortalSource[] = [
@@ -129,10 +131,23 @@ const PORTAL_SOURCES: PortalSource[] = [
       "Leads are tagged 'WhatsApp'.",
     ],
   },
+  {
+    sourceName: "Phone Call",
+    label: "IVR / Phone Calls (Virtual Number)",
+    path: "/api/webhooks/call",
+    description:
+      "Every incoming call on your business (virtual) number becomes a lead automatically — caller's number is captured, repeat calls are logged on the same lead.",
+    steps: [
+      "Get a virtual/IVR number from a cloud-telephony provider — Exotel, MyOperator, Tata Smartflo, Knowlarity or Servetel (₹500–1500/month).",
+      "Advertise that number everywhere; set it to forward calls to your team's phones.",
+      "In the provider's dashboard, add this URL as the 'call webhook' / 'Passthru' — it accepts the caller number as CallFrom, caller_id, from or mobile (GET or POST).",
+      "Every call (answered or missed) instantly creates a lead tagged 'Phone Call'.",
+    ],
+  },
 ];
 
-function webhookUrl(origin: string, token: string, source: string) {
-  return `${origin}${WEBHOOK_PATH}?token=${token}&source=${encodeURIComponent(source)}`;
+function webhookUrl(origin: string, token: string, source: string, path = WEBHOOK_PATH) {
+  return `${origin}${path}?token=${token}&source=${encodeURIComponent(source)}`;
 }
 
 function SourceCard({
@@ -150,7 +165,7 @@ function SourceCard({
 }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
-  const url = webhookUrl(origin, token, source.sourceName);
+  const url = webhookUrl(origin, token, source.sourceName, source.path);
 
   const test = useMutation({
     mutationFn: async () => {
