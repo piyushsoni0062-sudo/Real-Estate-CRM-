@@ -15,6 +15,10 @@ import {
   Avatar,
   Badge,
   Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
   ConfirmDialog,
   Dialog,
   FieldError,
@@ -22,6 +26,8 @@ import {
   Label,
   PageHeader,
   Select,
+  Skeleton,
+  Tabs,
 } from "@/components/ui/primitives";
 import type { TeamUser } from "@/lib/types";
 
@@ -55,6 +61,7 @@ export default function TeamPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<TeamUser | null>(null);
   const [deleting, setDeleting] = useState<TeamUser | null>(null);
+  const [view, setView] = useState("members");
 
   const params = useMemo(() => ({ page, limit: 20, search: search || undefined }), [page, search]);
 
@@ -186,35 +193,52 @@ export default function TeamPage() {
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && (setSearch(searchInput.trim()), setPage(1))}
-            placeholder="Search name, mobile…"
-            className="pl-9"
-            aria-label="Search team"
-          />
-        </div>
-        {search && (
-          <Button variant="ghost" onClick={() => { setSearch(""); setSearchInput(""); setPage(1); }}>
-            <X className="h-4 w-4" /> Clear
-          </Button>
-        )}
-      </div>
+      {can("reports", "view") && (
+        <Tabs
+          tabs={[
+            { key: "members", label: "Members" },
+            { key: "performance", label: "Performance" },
+          ]}
+          active={view}
+          onChange={setView}
+        />
+      )}
 
-      <DataTable
-        columns={columns}
-        rows={data?.items ?? []}
-        rowKey={(u) => u.id}
-        loading={isLoading}
-        onRowClick={(u) => navigate(`/team/${u.id}`)}
-        meta={data?.meta}
-        onPageChange={setPage}
-        emptyTitle="No team members found"
-      />
+      {view === "members" && (
+        <>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (setSearch(searchInput.trim()), setPage(1))}
+                placeholder="Search name, mobile…"
+                className="pl-9"
+                aria-label="Search team"
+              />
+            </div>
+            {search && (
+              <Button variant="ghost" onClick={() => { setSearch(""); setSearchInput(""); setPage(1); }}>
+                <X className="h-4 w-4" /> Clear
+              </Button>
+            )}
+          </div>
+
+          <DataTable
+            columns={columns}
+            rows={data?.items ?? []}
+            rowKey={(u) => u.id}
+            loading={isLoading}
+            onRowClick={(u) => navigate(`/team/${u.id}`)}
+            meta={data?.meta}
+            onPageChange={setPage}
+            emptyTitle="No team members found"
+          />
+        </>
+      )}
+
+      {view === "performance" && <TeamPerformance />}
 
       <UserFormDialog
         open={formOpen}
@@ -234,6 +258,107 @@ export default function TeamPage() {
         confirmLabel="Remove"
       />
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Team performance — this month's leads / visits / bookings / target  */
+/* ------------------------------------------------------------------ */
+
+interface PerfRow {
+  id: string;
+  name: string;
+  role: string;
+  leads: number;
+  visits: number;
+  bookings: number;
+  revenue: number;
+  target: number;
+}
+
+function TeamPerformance() {
+  const from = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  }, []);
+  const to = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["team-performance", from, to],
+    queryFn: async () =>
+      (
+        await api.get<ApiResponse<{ employees: PerfRow[] }>>("/reports/summary", {
+          params: { from, to: `${to}T23:59:59` },
+        })
+      ).data.data,
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Team performance — this month</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-64 w-full" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 pr-4 font-semibold">Employee</th>
+                  <th className="px-2 py-2 text-center font-semibold">Leads</th>
+                  <th className="px-2 py-2 text-center font-semibold">Site Visits</th>
+                  <th className="px-2 py-2 text-center font-semibold">Bookings</th>
+                  <th className="px-2 py-2 text-right font-semibold">Revenue</th>
+                  <th className="w-56 px-2 py-2 font-semibold">Target Progress</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.employees ?? []).map((e) => {
+                  const pct = e.target > 0 ? Math.min(100, Math.round((e.revenue / e.target) * 100)) : null;
+                  return (
+                    <tr key={e.id} className="border-b last:border-0">
+                      <td className="py-2.5 pr-4">
+                        <span className="flex items-center gap-2">
+                          <Avatar name={e.name} size={28} />
+                          <span>
+                            <span className="block font-medium">{e.name}</span>
+                            <span className="block text-xs text-muted-foreground">{e.role}</span>
+                          </span>
+                        </span>
+                      </td>
+                      <td className="px-2 py-2.5 text-center">{e.leads}</td>
+                      <td className="px-2 py-2.5 text-center">{e.visits}</td>
+                      <td className="px-2 py-2.5 text-center font-semibold">{e.bookings}</td>
+                      <td className="px-2 py-2.5 text-right font-semibold">{formatINR(e.revenue)}</td>
+                      <td className="px-2 py-2.5">
+                        {pct !== null ? (
+                          <div>
+                            <div className="flex justify-between text-xs">
+                              <span className="font-medium">{pct}%</span>
+                              <span className="text-muted-foreground">of {formatINR(e.target)}</span>
+                            </div>
+                            <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
+                              <div
+                                className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-success" : pct >= 50 ? "bg-primary" : "bg-warning"}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No target set</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

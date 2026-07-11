@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, LogIn, LogOut, MapPin, Plus } from "lucide-react";
+import { CalendarDays, LogIn, LogOut, MapPin, Pencil, Plus, UserPlus } from "lucide-react";
 import { api, ApiResponse, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useUsersList } from "@/lib/lookups";
 import { formatDate } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -62,6 +63,9 @@ export default function AttendancePage() {
   const { can } = useAuth();
   const [tab, setTab] = useState("today");
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [editRec, setEditRec] = useState<AttendanceRecord | null>(null);
+  const [markOpen, setMarkOpen] = useState(false);
 
   const { data: myToday, isLoading: loadingMe } = useQuery({
     queryKey: ["attendance-me"],
@@ -83,9 +87,35 @@ export default function AttendancePage() {
     enabled: tab === "leaves",
   });
 
+  // Monthly per-employee attendance report.
+  const { data: report, isLoading: loadingReport } = useQuery({
+    queryKey: ["attendance-report", month],
+    queryFn: async () =>
+      (
+        await api.get<
+          ApiResponse<{
+            month: string;
+            workingDays: number;
+            summary: Array<{
+              user: { id: string; name: string; avatarUrl: string | null; designation: string | null };
+              present: number;
+              late: number;
+              halfDay: number;
+              leave: number;
+              absent: number;
+              totalMinutes: number;
+              avgMinutes: number;
+            }>;
+          }>
+        >("/attendance/report", { params: { month } })
+      ).data.data,
+    enabled: canViewTeam && tab === "report",
+  });
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["attendance-me"] });
     queryClient.invalidateQueries({ queryKey: ["attendance-team"] });
+    queryClient.invalidateQueries({ queryKey: ["attendance-report"] });
   };
 
   const checkIn = useMutation({
@@ -171,6 +201,7 @@ export default function AttendancePage() {
       <Tabs
         tabs={[
           ...(canViewTeam ? [{ key: "today", label: "Team Today" }] : []),
+          ...(canViewTeam ? [{ key: "report", label: "Monthly Report" }] : []),
           { key: "leaves", label: "Leaves" },
         ]}
         active={canViewTeam ? tab : "leaves"}
@@ -179,8 +210,13 @@ export default function AttendancePage() {
 
       {tab === "today" && canViewTeam && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle>Team attendance — today</CardTitle>
+            {canManageLeaves && (
+              <Button size="sm" variant="outline" onClick={() => setMarkOpen(true)}>
+                <UserPlus className="h-4 w-4" /> Mark Attendance
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             {loadingTeam ? (
@@ -207,9 +243,99 @@ export default function AttendancePage() {
                     </p>
                     <p className="w-16 text-sm text-muted-foreground">{fmtMinutes(r.workMinutes)}</p>
                     <Badge color={STATUS_COLOR[r.status]}>{r.status.replace("_", " ")}</Badge>
+                    {canManageLeaves && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Edit attendance for ${r.user?.name}`}
+                        onClick={() => setEditRec(r)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "report" && canViewTeam && (
+        <Card>
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
+            <CardTitle>Monthly attendance report</CardTitle>
+            <Input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="w-44"
+              aria-label="Select month"
+            />
+          </CardHeader>
+          <CardContent>
+            {loadingReport ? (
+              <Skeleton className="h-64 w-full" />
+            ) : !report ? null : (
+              <>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  {report.workingDays} working days (Mon–Sat) counted so far this month.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-muted-foreground">
+                        <th className="py-2 pr-4 font-semibold">Employee</th>
+                        <th className="px-2 py-2 text-center font-semibold">Present</th>
+                        <th className="px-2 py-2 text-center font-semibold">Late</th>
+                        <th className="px-2 py-2 text-center font-semibold">Half Day</th>
+                        <th className="px-2 py-2 text-center font-semibold">Leave</th>
+                        <th className="px-2 py-2 text-center font-semibold">Absent</th>
+                        <th className="px-2 py-2 text-center font-semibold">Total Hrs</th>
+                        <th className="px-2 py-2 text-center font-semibold">Avg/Day</th>
+                        <th className="px-2 py-2 text-center font-semibold">Attendance %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.summary.map((row) => {
+                        const attended = row.present + row.late + row.halfDay;
+                        const pct = report.workingDays
+                          ? Math.round(((attended + row.leave) / report.workingDays) * 100)
+                          : 0;
+                        return (
+                          <tr key={row.user.id} className="border-b last:border-0">
+                            <td className="py-2.5 pr-4">
+                              <span className="flex items-center gap-2">
+                                <Avatar name={row.user.name} src={row.user.avatarUrl} size={28} />
+                                <span>
+                                  <span className="block font-medium">{row.user.name}</span>
+                                  {row.user.designation && (
+                                    <span className="block text-xs text-muted-foreground">
+                                      {row.user.designation}
+                                    </span>
+                                  )}
+                                </span>
+                              </span>
+                            </td>
+                            <td className="px-2 py-2.5 text-center font-semibold text-success">{row.present}</td>
+                            <td className="px-2 py-2.5 text-center font-semibold text-warning">{row.late}</td>
+                            <td className="px-2 py-2.5 text-center">{row.halfDay}</td>
+                            <td className="px-2 py-2.5 text-center">{row.leave}</td>
+                            <td className="px-2 py-2.5 text-center font-semibold text-destructive">{row.absent}</td>
+                            <td className="px-2 py-2.5 text-center">{fmtMinutes(row.totalMinutes) === "—" ? "0h" : fmtMinutes(row.totalMinutes)}</td>
+                            <td className="px-2 py-2.5 text-center">{fmtMinutes(row.avgMinutes)}</td>
+                            <td className="px-2 py-2.5 text-center">
+                              <Badge color={pct >= 90 ? "#10B981" : pct >= 70 ? "#F59E0B" : "#EF4444"}>
+                                {pct}%
+                              </Badge>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -264,7 +390,251 @@ export default function AttendancePage() {
       )}
 
       <ApplyLeaveDialog open={leaveOpen} onClose={() => setLeaveOpen(false)} />
+      <EditAttendanceDialog record={editRec} onClose={() => setEditRec(null)} onSaved={invalidate} />
+      <MarkAttendanceDialog open={markOpen} onClose={() => setMarkOpen(false)} onSaved={invalidate} />
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin: edit an existing punch                                       */
+/* ------------------------------------------------------------------ */
+
+const ATT_STATUSES = ["PRESENT", "LATE", "HALF_DAY", "LEAVE", "ABSENT"];
+
+function toLocalInput(v: string | null): string {
+  if (!v) return "";
+  const d = new Date(v);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function EditAttendanceDialog({
+  record,
+  onClose,
+  onSaved,
+}: {
+  record: AttendanceRecord | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [form, setForm] = useState({ status: "", checkInAt: "", checkOutAt: "", notes: "" });
+  const [lastId, setLastId] = useState<string | null>(null);
+
+  if (record && record.id !== lastId) {
+    setLastId(record.id);
+    setForm({
+      status: record.status,
+      checkInAt: toLocalInput(record.checkInAt),
+      checkOutAt: toLocalInput(record.checkOutAt),
+      notes: "",
+    });
+  }
+
+  const save = useMutation({
+    mutationFn: async () =>
+      (
+        await api.patch(`/attendance/${record!.id}`, {
+          status: form.status,
+          checkInAt: form.checkInAt ? new Date(form.checkInAt).toISOString() : null,
+          checkOutAt: form.checkOutAt ? new Date(form.checkOutAt).toISOString() : null,
+          notes: form.notes.trim() || undefined,
+        })
+      ).data,
+    onSuccess: () => {
+      onSaved();
+      onClose();
+      toast.success("Attendance updated");
+    },
+    onError: (err) => toast.error("Update failed", errorMessage(err)),
+  });
+
+  if (!record) return null;
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Edit attendance — ${record.user?.name ?? ""}`}
+      description={formatDate(record.date)}
+    >
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="ea-status">Status</Label>
+          <Select
+            id="ea-status"
+            value={form.status}
+            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+          >
+            {ATT_STATUSES.map((s) => (
+              <option key={s} value={s}>{s.replace("_", " ")}</option>
+            ))}
+          </Select>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="ea-in">Check In</Label>
+            <Input
+              id="ea-in"
+              type="datetime-local"
+              value={form.checkInAt}
+              onChange={(e) => setForm((f) => ({ ...f, checkInAt: e.target.value }))}
+            />
+          </div>
+          <div>
+            <Label htmlFor="ea-out">Check Out</Label>
+            <Input
+              id="ea-out"
+              type="datetime-local"
+              value={form.checkOutAt}
+              onChange={(e) => setForm((f) => ({ ...f, checkOutAt: e.target.value }))}
+            />
+          </div>
+        </div>
+        <div>
+          <Label htmlFor="ea-notes">Correction note</Label>
+          <Input
+            id="ea-notes"
+            value={form.notes}
+            onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+            placeholder="e.g. Forgot to punch out — corrected"
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Working hours are recalculated automatically. This change is recorded in the audit log.
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button loading={save.isPending} onClick={() => save.mutate()}>Save Changes</Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin: mark attendance for an employee (missed punch / leave)       */
+/* ------------------------------------------------------------------ */
+
+function MarkAttendanceDialog({
+  open,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const { data: users } = useUsersList();
+  const [form, setForm] = useState({
+    userId: "",
+    date: new Date().toISOString().slice(0, 10),
+    status: "PRESENT",
+    checkInAt: "",
+    checkOutAt: "",
+  });
+
+  const save = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post("/attendance/mark", {
+          userId: form.userId,
+          date: form.date,
+          status: form.status,
+          checkInAt: form.checkInAt ? new Date(`${form.date}T${form.checkInAt}`).toISOString() : null,
+          checkOutAt: form.checkOutAt ? new Date(`${form.date}T${form.checkOutAt}`).toISOString() : null,
+        })
+      ).data,
+    onSuccess: () => {
+      onSaved();
+      onClose();
+      setForm((f) => ({ ...f, userId: "", checkInAt: "", checkOutAt: "" }));
+      toast.success("Attendance marked");
+    },
+    onError: (err) => toast.error("Failed", errorMessage(err)),
+  });
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Mark attendance"
+      description="For missed punches, leaves or corrections — overwrites that day's record if one exists."
+    >
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="ma-user">Employee *</Label>
+            <Select
+              id="ma-user"
+              value={form.userId}
+              onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
+            >
+              <option value="">Choose…</option>
+              {users?.map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="ma-date">Date *</Label>
+            <Input
+              id="ma-date"
+              type="date"
+              value={form.date}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+            />
+          </div>
+        </div>
+        <div>
+          <Label htmlFor="ma-status">Status</Label>
+          <Select
+            id="ma-status"
+            value={form.status}
+            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+          >
+            {ATT_STATUSES.map((s) => (
+              <option key={s} value={s}>{s.replace("_", " ")}</option>
+            ))}
+          </Select>
+        </div>
+        {form.status !== "LEAVE" && form.status !== "ABSENT" && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="ma-in">Check In time</Label>
+              <Input
+                id="ma-in"
+                type="time"
+                value={form.checkInAt}
+                onChange={(e) => setForm((f) => ({ ...f, checkInAt: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="ma-out">Check Out time</Label>
+              <Input
+                id="ma-out"
+                type="time"
+                value={form.checkOutAt}
+                onChange={(e) => setForm((f) => ({ ...f, checkOutAt: e.target.value }))}
+              />
+            </div>
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={!form.userId || !form.date}
+            loading={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            Mark
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

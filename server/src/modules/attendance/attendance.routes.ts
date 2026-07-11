@@ -137,6 +137,150 @@ router.get(
   })
 );
 
+// ---- GET /api/attendance/report?month=YYYY-MM — per-employee monthly summary ----
+router.get(
+  "/report",
+  requirePermission("attendance", "view"),
+  validate({ query: z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }) }),
+  asyncHandler(async (req, res) => {
+    const [y, m] = (req.query.month as string).split("-").map(Number);
+    const from = new Date(Date.UTC(y, m - 1, 1));
+    const to = new Date(Date.UTC(y, m, 1));
+
+    // Working days = Mon–Sat (Sunday off), capped at today for the current month.
+    const today = new Date();
+    const capUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    let workingDays = 0;
+    for (let d = new Date(from); d < to && d.getTime() <= capUtc; d.setUTCDate(d.getUTCDate() + 1)) {
+      if (d.getUTCDay() !== 0) workingDays++;
+    }
+
+    const [users, records] = await Promise.all([
+      prisma.user.findMany({
+        where: { deletedAt: null, isActive: true },
+        select: {
+          id: true, name: true, avatarUrl: true, designation: true,
+          department: { select: { name: true } },
+        },
+        orderBy: { name: "asc" },
+      }),
+      prisma.attendance.findMany({
+        where: { date: { gte: from, lt: to } },
+        select: { userId: true, status: true, workMinutes: true },
+      }),
+    ]);
+
+    const summary = users.map((u) => {
+      const mine = records.filter((r) => r.userId === u.id);
+      const count = (s: string) => mine.filter((r) => r.status === s).length;
+      const present = count("PRESENT");
+      const late = count("LATE");
+      const halfDay = count("HALF_DAY");
+      const leave = count("LEAVE");
+      const totalMinutes = mine.reduce((sum, r) => sum + (r.workMinutes ?? 0), 0);
+      const attended = present + late + halfDay;
+      return {
+        user: u,
+        present,
+        late,
+        halfDay,
+        leave,
+        absent: Math.max(0, workingDays - attended - leave),
+        totalMinutes,
+        avgMinutes: attended > 0 ? Math.round(totalMinutes / attended) : 0,
+      };
+    });
+
+    res.json({ success: true, data: { month: req.query.month, workingDays, summary } });
+  })
+);
+
+// ---- POST /api/attendance/mark — admin marks/corrects a day for an employee ----
+router.post(
+  "/mark",
+  requirePermission("attendance", "manage"),
+  validate({
+    body: z.object({
+      userId: z.string().min(1),
+      date: z.coerce.date(),
+      status: z.enum(["PRESENT", "LATE", "HALF_DAY", "LEAVE", "ABSENT"]),
+      checkInAt: z.coerce.date().optional().nullable(),
+      checkOutAt: z.coerce.date().optional().nullable(),
+      notes: z.string().max(300).optional().nullable(),
+    }),
+  }),
+  asyncHandler(async (req, res) => {
+    const d = req.body.date as Date;
+    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const workMinutes =
+      req.body.checkInAt && req.body.checkOutAt
+        ? Math.max(0, Math.round((+new Date(req.body.checkOutAt) - +new Date(req.body.checkInAt)) / 60000))
+        : null;
+
+    const record = await prisma.attendance.upsert({
+      where: { userId_date: { userId: req.body.userId, date } },
+      create: {
+        userId: req.body.userId,
+        date,
+        status: req.body.status,
+        checkInAt: req.body.checkInAt ?? null,
+        checkOutAt: req.body.checkOutAt ?? null,
+        workMinutes,
+        notes: req.body.notes ?? `Marked by ${req.user!.name}`,
+      },
+      update: {
+        status: req.body.status,
+        checkInAt: req.body.checkInAt ?? null,
+        checkOutAt: req.body.checkOutAt ?? null,
+        workMinutes,
+        notes: req.body.notes ?? `Corrected by ${req.user!.name}`,
+      },
+    });
+    logAudit(req, "MARK_ATTENDANCE", "Attendance", record.id, undefined, req.body);
+    res.json({ success: true, data: record });
+  })
+);
+
+// ---- PATCH /api/attendance/:id — admin edits an existing punch ----
+router.patch(
+  "/:id",
+  requirePermission("attendance", "manage"),
+  validate({
+    body: z.object({
+      status: z.enum(["PRESENT", "LATE", "HALF_DAY", "LEAVE", "ABSENT"]).optional(),
+      checkInAt: z.coerce.date().optional().nullable(),
+      checkOutAt: z.coerce.date().optional().nullable(),
+      notes: z.string().max(300).optional().nullable(),
+    }),
+  }),
+  asyncHandler(async (req, res) => {
+    const before = await prisma.attendance.findUnique({ where: { id: req.params.id } });
+    if (!before) throw ApiError.notFound("Attendance record not found");
+
+    const checkInAt =
+      req.body.checkInAt === undefined ? before.checkInAt : req.body.checkInAt;
+    const checkOutAt =
+      req.body.checkOutAt === undefined ? before.checkOutAt : req.body.checkOutAt;
+    const workMinutes =
+      checkInAt && checkOutAt
+        ? Math.max(0, Math.round((+new Date(checkOutAt) - +new Date(checkInAt)) / 60000))
+        : null;
+
+    const record = await prisma.attendance.update({
+      where: { id: before.id },
+      data: {
+        ...(req.body.status && { status: req.body.status }),
+        checkInAt,
+        checkOutAt,
+        workMinutes,
+        ...(req.body.notes !== undefined && { notes: req.body.notes }),
+      },
+    });
+    logAudit(req, "UPDATE", "Attendance", record.id, before, req.body);
+    res.json({ success: true, data: record });
+  })
+);
+
 // ---- Leave management ----
 router.get(
   "/leaves",
