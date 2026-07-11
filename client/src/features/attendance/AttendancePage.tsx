@@ -96,6 +96,7 @@ export default function AttendancePage() {
           ApiResponse<{
             month: string;
             workingDays: number;
+            weeklyOff?: number;
             summary: Array<{
               user: { id: string; name: string; avatarUrl: string | null; designation: string | null };
               present: number;
@@ -279,7 +280,11 @@ export default function AttendancePage() {
             ) : !report ? null : (
               <>
                 <p className="mb-3 text-sm text-muted-foreground">
-                  {report.workingDays} working days (Mon–Sat) counted so far this month.
+                  {report.workingDays} working days counted so far this month (weekly off:{" "}
+                  {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
+                    report.weeklyOff ?? 0
+                  ]}
+                  {" — change it in Settings → Attendance"}).
                 </p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">

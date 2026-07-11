@@ -30,6 +30,7 @@ export default function SettingsPage() {
 
   const tabs = [
     { key: "company", label: "Company" },
+    { key: "attendance", label: "Attendance" },
     { key: "statuses", label: "Lead Statuses" },
     { key: "sources", label: "Lead Sources" },
     { key: "pipeline", label: "Pipeline" },
@@ -44,6 +45,7 @@ export default function SettingsPage() {
       <PageHeader title="Settings" description="Configure your CRM workspace" />
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === "company" && <CompanyTab />}
+      {tab === "attendance" && <AttendanceSettingsTab />}
       {tab === "statuses" && <OptionsTab kind="lead-statuses" title="Lead Statuses" withOrder />}
       {tab === "sources" && <OptionsTab kind="lead-sources" title="Lead Sources" />}
       {tab === "pipeline" && <PipelineTab />}
@@ -120,6 +122,90 @@ function CompanyTab() {
         <div>
           <Label htmlFor="co-gst">GST Number</Label>
           <Input id="co-gst" value={form.gst ?? ""} disabled={disabled} onChange={(e) => setForm((f) => ({ ...f, gst: e.target.value }))} />
+        </div>
+        {!disabled && (
+          <div className="flex justify-end">
+            <Button onClick={() => save.mutate()} loading={save.isPending}>Save</Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ---------------- Attendance rules ---------------- */
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function AttendanceSettingsTab() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const disabled = !can("settings", "update");
+  const [form, setForm] = useState({ lateAfter: "10:00", weeklyOff: 0 });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["settings-all"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<Record<string, unknown>>>("/settings")).data.data,
+  });
+
+  useEffect(() => {
+    const v = data?.attendance as { lateAfter?: string; weeklyOff?: number } | undefined;
+    if (v) {
+      setForm({
+        lateAfter: v.lateAfter ?? "10:00",
+        weeklyOff: typeof v.weeklyOff === "number" ? v.weeklyOff : 0,
+      });
+    }
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: async () => (await api.put("/settings/attendance", { value: form })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["attendance-report"] });
+      toast.success("Attendance rules saved", "Applies from the next check-in.");
+    },
+    onError: (err) => toast.error("Save failed", errorMessage(err)),
+  });
+
+  if (isLoading) return <Skeleton className="h-48 w-full" />;
+
+  return (
+    <Card className="max-w-xl">
+      <CardHeader><CardTitle>Attendance Rules</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <Label htmlFor="att-late">Late after (IST)</Label>
+          <Input
+            id="att-late"
+            type="time"
+            value={form.lateAfter}
+            disabled={disabled}
+            onChange={(e) => setForm((f) => ({ ...f, lateAfter: e.target.value }))}
+            className="w-40"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Check-in at or after this time is marked <strong>LATE</strong>.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="att-off">Weekly off day</Label>
+          <Select
+            id="att-off"
+            value={String(form.weeklyOff)}
+            disabled={disabled}
+            onChange={(e) => setForm((f) => ({ ...f, weeklyOff: Number(e.target.value) }))}
+            className="w-48"
+          >
+            {WEEKDAYS.map((d, i) => (
+              <option key={d} value={i}>{d}</option>
+            ))}
+          </Select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Excluded from working-day counts in the monthly attendance report.
+          </p>
         </div>
         {!disabled && (
           <div className="flex justify-end">

@@ -29,6 +29,7 @@ import {
   Input,
   Label,
   PageHeader,
+  Select,
   Skeleton,
 } from "@/components/ui/primitives";
 
@@ -89,33 +90,129 @@ export default function ReportsPage() {
       ).data.data,
   });
 
-  const exportExcel = () => {
+  const [reportType, setReportType] = useState("all");
+  const [exporting, setExporting] = useState(false);
+
+  const exportReport = async () => {
     if (!data) return;
+    setExporting(true);
     try {
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(
-        wb,
-        XLSX.utils.json_to_sheet([
-          {
-            From: from,
-            To: to,
-            Leads: data.overview.leadsCreated,
-            Bookings: data.overview.bookings,
-            Revenue: data.overview.revenue,
-            SiteVisits: data.overview.siteVisits,
-            "Conversion %": data.overview.conversionRate,
-          },
-        ]),
-        "Overview"
-      );
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.employees), "Employees");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.leadSource), "Lead Sources");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.lostReasons), "Lost Reasons");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.propertyInventory), "Inventory");
-      XLSX.writeFile(wb, `crm-report-${from}-to-${to}.xlsx`);
-      toast.success("Report exported");
+      const overviewRows = [
+        {
+          From: from,
+          To: to,
+          Leads: data.overview.leadsCreated,
+          Bookings: data.overview.bookings,
+          Revenue: data.overview.revenue,
+          SiteVisits: data.overview.siteVisits,
+          "Conversion %": data.overview.conversionRate,
+        },
+      ];
+      const employeeRows = data.employees.map((e) => ({
+        Employee: e.name,
+        Role: e.role,
+        Leads: e.leads,
+        "Site Visits": e.visits,
+        Bookings: e.bookings,
+        Revenue: e.revenue,
+        Target: e.target,
+        "Target %": e.target > 0 ? Math.round((e.revenue / e.target) * 100) : "",
+      }));
+      const srcRows = data.leadSource.map((s) => ({ Source: s.name, Leads: s.value }));
+      const statusRows = data.leadStatus.map((s) => ({ Status: s.name, Leads: s.value }));
+      const lostRows = data.lostReasons.map((r) => ({ Reason: r.name, Leads: r.value }));
+      const visitRows = data.siteVisitStatus.map((v) => ({ Status: v.name, Visits: v.value }));
+      const invRows = data.propertyInventory.map((p) => ({
+        Type: p.type,
+        Status: p.status,
+        Units: p.count,
+      }));
+
+      // Per-employee monthly attendance comes from its own endpoint.
+      const attendanceRows = async () => {
+        const month = from.slice(0, 7);
+        const rep = (
+          await api.get<
+            ApiResponse<{
+              workingDays: number;
+              summary: Array<{
+                user: { name: string; designation: string | null };
+                present: number; late: number; halfDay: number; leave: number;
+                absent: number; totalMinutes: number; avgMinutes: number;
+              }>;
+            }>
+          >("/attendance/report", { params: { month } })
+        ).data.data;
+        return rep.summary.map((r) => ({
+          Employee: r.user.name,
+          Designation: r.user.designation ?? "",
+          Present: r.present,
+          Late: r.late,
+          "Half Day": r.halfDay,
+          Leave: r.leave,
+          Absent: r.absent,
+          "Total Hours": +(r.totalMinutes / 60).toFixed(1),
+          "Avg Hours/Day": +(r.avgMinutes / 60).toFixed(1),
+          "Working Days": rep.workingDays,
+        }));
+      };
+
+      let filename = `report-${from}-to-${to}.xlsx`;
+      switch (reportType) {
+        case "overview":
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(overviewRows), "Overview");
+          filename = `overview-${from}-to-${to}.xlsx`;
+          break;
+        case "employees":
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(employeeRows), "Employee Performance");
+          filename = `employee-performance-${from}-to-${to}.xlsx`;
+          break;
+        case "leadSource":
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(srcRows), "Lead Sources");
+          filename = `lead-sources-${from}-to-${to}.xlsx`;
+          break;
+        case "leadStatus":
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(statusRows), "Lead Status");
+          filename = `lead-status-${from}-to-${to}.xlsx`;
+          break;
+        case "lostReasons":
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lostRows), "Lost Reasons");
+          filename = `lost-reasons-${from}-to-${to}.xlsx`;
+          break;
+        case "siteVisits":
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(visitRows), "Site Visits");
+          filename = `site-visits-${from}-to-${to}.xlsx`;
+          break;
+        case "inventory":
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invRows), "Inventory");
+          filename = `property-inventory-${from}-to-${to}.xlsx`;
+          break;
+        case "attendance": {
+          const rows = await attendanceRows();
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Attendance");
+          filename = `attendance-${from.slice(0, 7)}.xlsx`;
+          break;
+        }
+        default: {
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(overviewRows), "Overview");
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(employeeRows), "Employees");
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(srcRows), "Lead Sources");
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(statusRows), "Lead Status");
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lostRows), "Lost Reasons");
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(visitRows), "Site Visits");
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invRows), "Inventory");
+          const rows = await attendanceRows();
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Attendance");
+          filename = `complete-report-${from}-to-${to}.xlsx`;
+        }
+      }
+      XLSX.writeFile(wb, filename);
+      toast.success("Report exported", filename);
     } catch (err) {
       toast.error("Export failed", errorMessage(err));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -134,9 +231,27 @@ export default function ReportsPage() {
         title="Reports"
         description="Revenue, sources, employees, visits, attendance and inventory"
         actions={
-          <Button variant="outline" onClick={exportExcel} disabled={!data}>
-            <Download className="h-4 w-4" /> Export Excel
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={reportType}
+              onChange={(e) => setReportType(e.target.value)}
+              className="w-56"
+              aria-label="Choose report to export"
+            >
+              <option value="all">Complete Report (all)</option>
+              <option value="overview">Overview</option>
+              <option value="employees">Employee Performance</option>
+              <option value="leadSource">Lead Sources</option>
+              <option value="leadStatus">Lead Status</option>
+              <option value="lostReasons">Lost Reasons</option>
+              <option value="siteVisits">Site Visits</option>
+              <option value="attendance">Attendance (Monthly)</option>
+              <option value="inventory">Property Inventory</option>
+            </Select>
+            <Button variant="outline" onClick={exportReport} disabled={!data} loading={exporting}>
+              <Download className="h-4 w-4" /> Export Excel
+            </Button>
+          </div>
         }
       />
 

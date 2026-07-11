@@ -10,7 +10,31 @@ import { logAudit } from "../../utils/audit";
 const router = Router();
 router.use(requireAuth);
 
-const LATE_AFTER_HOUR = 10; // check-in after 10:00 local time is marked LATE
+/**
+ * Attendance rules are admin-configurable via Settings → Attendance:
+ *   lateAfter — "HH:mm" IST; check-in at/after this time is marked LATE
+ *   weeklyOff — 0..6 (0 = Sunday); excluded from working-day counts
+ */
+const ATT_DEFAULTS = { lateAfter: "10:00", weeklyOff: 0 };
+
+async function getAttendanceSettings(): Promise<{ lateAfter: string; weeklyOff: number }> {
+  const s = await prisma.setting.findUnique({ where: { key: "attendance" } });
+  const v = (s?.value as { lateAfter?: string; weeklyOff?: number } | null) ?? {};
+  return {
+    lateAfter: /^\d{2}:\d{2}$/.test(v.lateAfter ?? "") ? v.lateAfter! : ATT_DEFAULTS.lateAfter,
+    weeklyOff:
+      typeof v.weeklyOff === "number" && v.weeklyOff >= 0 && v.weeklyOff <= 6
+        ? v.weeklyOff
+        : ATT_DEFAULTS.weeklyOff,
+  };
+}
+
+/** Compares "now" against the late cut-off in IST (server clock may be UTC). */
+function isLateIST(now: Date, lateAfter: string): boolean {
+  const [h, m] = lateAfter.split(":").map(Number);
+  const istMinutes = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440; // UTC+5:30
+  return istMinutes >= h * 60 + m;
+}
 
 function todayUtcDate(): Date {
   const now = new Date();
@@ -45,6 +69,8 @@ router.post(
     if (existing?.checkInAt) throw ApiError.badRequest("You have already checked in today");
 
     const now = new Date();
+    const { lateAfter } = await getAttendanceSettings();
+    const status = isLateIST(now, lateAfter) ? "LATE" : "PRESENT";
     const record = await prisma.attendance.upsert({
       where: { userId_date: { userId: req.user!.id, date } },
       create: {
@@ -53,13 +79,13 @@ router.post(
         checkInAt: now,
         checkInLat: req.body.lat,
         checkInLng: req.body.lng,
-        status: now.getHours() >= LATE_AFTER_HOUR ? "LATE" : "PRESENT",
+        status,
       },
       update: {
         checkInAt: now,
         checkInLat: req.body.lat,
         checkInLng: req.body.lng,
-        status: now.getHours() >= LATE_AFTER_HOUR ? "LATE" : "PRESENT",
+        status,
       },
     });
     logAudit(req, "CHECK_IN", "Attendance", record.id);
@@ -147,12 +173,13 @@ router.get(
     const from = new Date(Date.UTC(y, m - 1, 1));
     const to = new Date(Date.UTC(y, m, 1));
 
-    // Working days = Mon–Sat (Sunday off), capped at today for the current month.
+    // Working days exclude the configured weekly off, capped at today for the current month.
+    const { weeklyOff } = await getAttendanceSettings();
     const today = new Date();
     const capUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
     let workingDays = 0;
     for (let d = new Date(from); d < to && d.getTime() <= capUtc; d.setUTCDate(d.getUTCDate() + 1)) {
-      if (d.getUTCDay() !== 0) workingDays++;
+      if (d.getUTCDay() !== weeklyOff) workingDays++;
     }
 
     const [users, records] = await Promise.all([
@@ -191,7 +218,7 @@ router.get(
       };
     });
 
-    res.json({ success: true, data: { month: req.query.month, workingDays, summary } });
+    res.json({ success: true, data: { month: req.query.month, workingDays, weeklyOff, summary } });
   })
 );
 
